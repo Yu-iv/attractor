@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rössler Attractor - Generative Chaos Canvas</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Three.js & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Google Font: Inter / Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Outfit', sans-serif;
+      user-select: none;
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000000;
+      color: #e2e8f0;
+    }
+
+    /* Glassmorphism panel styling */
+    .glass-panel {
+      background: rgba(10, 10, 10, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+    }
+
+    .glass-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      transition: all 0.25s ease;
+    }
+
+    .glass-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.4);
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .glass-btn:active {
+      transform: translateY(1px);
+    }
+
+    /* Custom range sliders */
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+    }
+
+    input[type=range]:focus {
+      outline: none;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 6px;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      border: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      height: 16px;
+      width: 16px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -5px;
+      box-shadow: 0 0 10px #ffffff;
+      transition: background-color 0.2s, transform 0.2s;
+    }
+
+    input[type=range]::-webkit-slider-thumb:hover {
+      background: #e2e8f0;
+      transform: scale(1.2);
+    }
+
+    /* Custom Scrollbar for HUD */
+    .custom-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+    }
+
+    /* Hide elements smoothly */
+    .ui-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .ui-visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+  </style>
+</head>
+<body class="relative w-full h-full">
+
+  <!-- WebGL Render Canvas Container -->
+  <div id="canvas-container" class="absolute inset-0 w-full h-full z-0 cursor-grab active:cursor-grabbing"></div>
+
+  <!-- Top Left Header Info -->
+  <header class="absolute top-5 left-5 z-10 glass-panel rounded-2xl p-4 md:p-5 max-w-sm pointer-events-auto transition-all">
+    <div class="flex items-center justify-between gap-3 mb-1">
+      <h1 class="text-xl font-bold tracking-wide text-white">
+        Rössler Chaos
+      </h1>
+      <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/10 text-gray-200 border border-white/20">
+        Monochrome 3D
+      </span>
+    </div>
+    <p class="text-xs text-gray-400 leading-relaxed">
+      A continuous 3D chaotic dynamical system tracing complex topological orbits via Runge-Kutta 4th Order Integration (RK4).
+    </p>
+    <div class="mt-3 text-[11px] font-mono text-gray-400 bg-black/60 p-2 rounded-lg border border-white/10 flex justify-between">
+      <span>dx/dt = -y - z</span>
+      <span>dy/dt = x + a·y</span>
+      <span>dz/dt = b + z(x - c)</span>
+    </div>
+  </header>
+
+  <!-- Top Right Action Controls -->
+  <div class="absolute top-5 right-5 z-10 flex gap-2">
+    <button id="btn-toggle-ui" title="Toggle HUD UI" class="glass-btn rounded-xl p-3 text-gray-300 hover:text-white flex items-center justify-center">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path>
+      </svg>
+    </button>
+    <button id="btn-reset-cam" title="Reset Camera View" class="glass-btn rounded-xl p-3 text-gray-300 hover:text-white flex items-center justify-center">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4 4m0 0l-4 4m4-4H3"></path>
+      </svg>
+    </button>
+    <button id="btn-auto-rotate" title="Toggle Auto Rotation" class="glass-btn rounded-xl p-3 text-gray-300 hover:text-white flex items-center justify-center">
+      <svg id="icon-rotate" class="w-5 h-5 text-white animate-spin-slow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Sidebar Control Panel -->
+  <aside id="control-panel" class="ui-visible absolute bottom-5 left-5 right-5 md:right-auto md:top-28 md:bottom-5 md:w-80 z-10 glass-panel rounded-2xl p-5 overflow-y-auto custom-scroll max-h-[75vh]">
+    
+    <!-- Presets -->
+    <div class="mb-5">
+      <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Iconic Chaotic States</label>
+      <div class="grid grid-cols-2 gap-2">
+        <button data-preset="standard" class="preset-btn glass-btn py-1.5 px-3 rounded-lg text-xs font-medium text-left text-white">Standard Chaos</button>
+        <button data-preset="period1" class="preset-btn glass-btn py-1.5 px-3 rounded-lg text-xs font-medium text-left text-gray-400">Period-1 Orbit</button>
+        <button data-preset="period2" class="preset-btn glass-btn py-1.5 px-3 rounded-lg text-xs font-medium text-left text-gray-400">Period-2 Orbit</button>
+        <button data-preset="spiral" class="preset-btn glass-btn py-1.5 px-3 rounded-lg text-xs font-medium text-left text-gray-400">Spiral Chaos</button>
+      </div>
+    </div>
+
+    <!-- Attractor Parameters -->
+    <div class="mb-5 border-t border-white/10 pt-4">
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Parameters</span>
+        <button id="btn-reset-params" class="text-[10px] text-gray-300 hover:text-white underline">Reset Default</button>
+      </div>
+
+      <!-- Param A -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-300 font-mono">a (Expansion):</span>
+          <span id="val-a" class="font-mono text-white font-semibold">0.20</span>
+        </div>
+        <input id="slider-a" type="range" min="0.05" max="0.35" step="0.005" value="0.2" />
+      </div>
+
+      <!-- Param B -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-300 font-mono">b (Fold Inward):</span>
+          <span id="val-b" class="font-mono text-white font-semibold">0.20</span>
+        </div>
+        <input id="slider-b" type="range" min="0.05" max="0.50" step="0.005" value="0.2" />
+      </div>
+
+      <!-- Param C -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-300 font-mono">c (Escape Threshold):</span>
+          <span id="val-c" class="font-mono text-white font-semibold">5.70</span>
+        </div>
+        <input id="slider-c" type="range" min="1.0" max="12.0" step="0.1" value="5.7" />
+      </div>
+    </div>
+
+    <!-- Simulation Controls -->
+    <div class="mb-5 border-t border-white/10 pt-4">
+      <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-3">Simulation Settings</span>
+
+      <!-- Integration Speed / dt -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-300">Integration Step (dt):</span>
+          <span id="val-dt" class="font-mono text-white font-semibold">0.030</span>
+        </div>
+        <input id="slider-dt" type="range" min="0.005" max="0.08" step="0.002" value="0.03" />
+      </div>
+
+      <!-- Particles Count -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-300">Particle Stream Count:</span>
+          <span id="val-particles" class="font-mono text-white font-semibold">25,000</span>
+        </div>
+        <input id="slider-particles" type="range" min="5000" max="60000" step="2500" value="25000" />
+      </div>
+
+      <!-- Fixed Particle Glow Size Info -->
+      <div class="mb-1">
+        <div class="flex justify-between text-xs">
+          <span class="text-gray-300">Particle Glow Size:</span>
+          <span class="font-mono text-white font-semibold">0.5 (Fixed)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Monochrome Style Selection -->
+    <div class="border-t border-white/10 pt-4">
+      <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-2">Monochrome Shading Mode</label>
+      <select id="select-theme" class="w-full bg-black/80 border border-white/20 rounded-xl text-xs text-gray-200 p-2.5 outline-none focus:border-white transition-colors">
+        <option value="pure">Pure White Luminance</option>
+        <option value="highContrast">High Contrast (Speed Grayscale)</option>
+        <option value="softGray">Soft Dusk Grayscale</option>
+      </select>
+    </div>
+
+  </aside>
+
+  <!-- Bottom Right Stats Overlay -->
+  <footer class="absolute bottom-5 right-5 z-10 glass-panel rounded-xl px-3 py-2 text-[11px] font-mono text-gray-400 flex items-center gap-4">
+    <div>FPS: <span id="fps-counter" class="text-white font-bold">60</span></div>
+    <div>Particles: <span id="active-particles-count" class="text-gray-300">25,000</span></div>
+  </footer>
+
+  <script>
+    // --- Application State ---
+    const params = {
+      a: 0.2,
+      b: 0.2,
+      c: 5.7,
+      dt: 0.03,
+      particleCount: 25000,
+      particleSize: 0.5, // Fixed particle glow size 0.5
+      autoRotate: true,
+      theme: 'pure'
+    };
+
+    // Preset Data
+    const presets = {
+      standard: { a: 0.2, b: 0.2, c: 5.7 },
+      period1:  { a: 0.1, b: 0.1, c: 4.0 },
+      period2:  { a: 0.1, b: 0.1, c: 6.0 },
+      spiral:   { a: 0.15, b: 0.2, c: 10.0 }
+    };
+
+    // Black & White Monochromatic Palettes
+    const palettes = {
+      pure: [
+        new THREE.Color('#ffffff'),
+        new THREE.Color('#ffffff')
+      ],
+      highContrast: [
+        new THREE.Color('#333333'),
+        new THREE.Color('#888888'),
+        new THREE.Color('#dddddd'),
+        new THREE.Color('#ffffff')
+      ],
+      softGray: [
+        new THREE.Color('#555555'),
+        new THREE.Color('#aaaaaa'),
+        new THREE.Color('#ececec')
+      ]
+    };
+
+    // --- Three.js Setup ---
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(20, 25, 45);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 1.0);
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxDistance = 200;
+    controls.minDistance = 5;
+
+    // --- Particle System Buffer Storage ---
+    let particleGeometry, particleMaterial, particleSystem;
+    let positions, colors;
+
+    // Create custom pure white particle glow texture dynamically via Canvas 2D
+    function createGlowTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+
+      const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
+      gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.2)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 64, 64);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
+
+    const glowTexture = createGlowTexture();
+
+    // Rössler System Derivative Function
+    function rosslerDeriv(x, y, z, a, b, c) {
+      return {
+        dx: -y - z,
+        dy: x + a * y,
+        dz: b + z * (x - c)
+      };
+    }
+
+    // Runge-Kutta 4th Order Integrator (RK4)
+    function rk4Step(x, y, z, dt, a, b, c) {
+      const k1 = rosslerDeriv(x, y, z, a, b, c);
+      
+      const k2 = rosslerDeriv(
+        x + 0.5 * dt * k1.dx,
+        y + 0.5 * dt * k1.dy,
+        z + 0.5 * dt * k1.dz,
+        a, b, c
+      );
+
+      const k3 = rosslerDeriv(
+        x + 0.5 * dt * k2.dx,
+        y + 0.5 * dt * k2.dy,
+        z + 0.5 * dt * k2.dz,
+        a, b, c
+      );
+
+      const k4 = rosslerDeriv(
+        x + dt * k3.dx,
+        y + dt * k3.dy,
+        z + dt * k3.dz,
+        a, b, c
+      );
+
+      return {
+        nx: x + (dt / 6) * (k1.dx + 2 * k2.dx + 2 * k3.dx + k4.dx),
+        ny: y + (dt / 6) * (k1.dy + 2 * k2.dy + 2 * k3.dy + k4.dy),
+        nz: z + (dt / 6) * (k1.dz + 2 * k2.dz + 2 * k3.dz + k4.dz)
+      };
+    }
+
+    // Helper: Interpolate Color Array based on value [0, 1]
+    function getThemeColor(t, themeKey) {
+      const palette = palettes[themeKey] || palettes.pure;
+      const scaled = (t % 1) * (palette.length - 1);
+      const idx = Math.floor(scaled);
+      const fract = scaled - idx;
+
+      const c1 = palette[idx];
+      const c2 = palette[Math.min(idx + 1, palette.length - 1)];
+
+      return new THREE.Color().copy(c1).lerp(c2, fract);
+    }
+
+    // Initialize Particle Arrays & Mesh
+    function initParticles() {
+      if (particleSystem) {
+        scene.remove(particleSystem);
+        particleGeometry.dispose();
+        particleMaterial.dispose();
+      }
+
+      const count = params.particleCount;
+      particleGeometry = new THREE.BufferGeometry();
+
+      positions = new Float32Array(count * 3);
+      colors = new Float32Array(count * 3);
+
+      let currX = 0.1, currY = 0.1, currZ = 0.1;
+
+      for (let i = 0; i < count; i++) {
+        for (let j = 0; j < 3; j++) {
+          const res = rk4Step(currX, currY, currZ, params.dt, params.a, params.b, params.c);
+          currX = res.nx;
+          currY = res.ny;
+          currZ = res.nz;
+        }
+
+        positions[i * 3]     = currX + (Math.random() - 0.5) * 0.2;
+        positions[i * 3 + 1] = currY + (Math.random() - 0.5) * 0.2;
+        positions[i * 3 + 2] = currZ + (Math.random() - 0.5) * 0.2;
+
+        const speed = Math.sqrt(currX * currX + currY * currY + currZ * currZ);
+        const col = getThemeColor(currZ * 0.05 + speed * 0.02, params.theme);
+
+        colors[i * 3]     = col.r;
+        colors[i * 3 + 1] = col.g;
+        colors[i * 3 + 2] = col.b;
+      }
+
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      particleMaterial = new THREE.PointsMaterial({
+        size: 0.5, // Fixed glow size of 0.5
+        map: glowTexture,
+        vertexColors: true,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        sizeAttenuation: true
+      });
+
+      particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+      scene.add(particleSystem);
+
+      document.getElementById('active-particles-count').innerText = count.toLocaleString();
+    }
+
+    function updateParticles() {
+      const pAttr = particleGeometry.attributes.position;
+      const cAttr = particleGeometry.attributes.color;
+      const pArray = pAttr.array;
+      const cArray = cAttr.array;
+
+      const dt = params.dt;
+      const a = params.a;
+      const b = params.b;
+      const c = params.c;
+
+      for (let i = 0; i < params.particleCount; i++) {
+        const idx = i * 3;
+        let x = pArray[idx];
+        let y = pArray[idx + 1];
+        let z = pArray[idx + 2];
+
+        const next = rk4Step(x, y, z, dt, a, b, c);
+
+        if (isNaN(next.nx) || Math.abs(next.nx) > 200) {
+          pArray[idx]     = (Math.random() - 0.5) * 2;
+          pArray[idx + 1] = (Math.random() - 0.5) * 2;
+          pArray[idx + 2] = Math.random() * 2;
+        } else {
+          pArray[idx]     = next.nx;
+          pArray[idx + 1] = next.ny;
+          pArray[idx + 2] = next.nz;
+        }
+
+        const speed = Math.sqrt(next.nx * next.nx + next.ny * next.ny + next.nz * next.nz);
+        const col = getThemeColor((next.nz * 0.04) + (speed * 0.015), params.theme);
+
+        cArray[idx]     = col.r;
+        cArray[idx + 1] = col.g;
+        cArray[idx + 2] = col.b;
+      }
+
+      pAttr.needsUpdate = true;
+      cAttr.needsUpdate = true;
+    }
+
+    // Dynamic UI Binding Setup
+    function bindUI() {
+      const sliderA = document.getElementById('slider-a');
+      const sliderB = document.getElementById('slider-b');
+      const sliderC = document.getElementById('slider-c');
+      const sliderDt = document.getElementById('slider-dt');
+      const sliderParticles = document.getElementById('slider-particles');
+      const selectTheme = document.getElementById('select-theme');
+
+      sliderA.addEventListener('input', (e) => {
+        params.a = parseFloat(e.target.value);
+        document.getElementById('val-a').innerText = params.a.toFixed(2);
+      });
+
+      sliderB.addEventListener('input', (e) => {
+        params.b = parseFloat(e.target.value);
+        document.getElementById('val-b').innerText = params.b.toFixed(2);
+      });
+
+      sliderC.addEventListener('input', (e) => {
+        params.c = parseFloat(e.target.value);
+        document.getElementById('val-c').innerText = params.c.toFixed(2);
+      });
+
+      sliderDt.addEventListener('input', (e) => {
+        params.dt = parseFloat(e.target.value);
+        document.getElementById('val-dt').innerText = params.dt.toFixed(3);
+      });
+
+      sliderParticles.addEventListener('change', (e) => {
+        params.particleCount = parseInt(e.target.value);
+        document.getElementById('val-particles').innerText = params.particleCount.toLocaleString();
+        initParticles();
+      });
+
+      selectTheme.addEventListener('change', (e) => {
+        params.theme = e.target.value;
+      });
+
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const key = e.target.getAttribute('data-preset');
+          if (presets[key]) {
+            const p = presets[key];
+            params.a = p.a;
+            params.b = p.b;
+            params.c = p.c;
+
+            sliderA.value = p.a;
+            sliderB.value = p.b;
+            sliderC.value = p.c;
+
+            document.getElementById('val-a').innerText = p.a.toFixed(2);
+            document.getElementById('val-b').innerText = p.b.toFixed(2);
+            document.getElementById('val-c').innerText = p.c.toFixed(2);
+
+            document.querySelectorAll('.preset-btn').forEach(b => {
+              b.classList.remove('text-white');
+              b.classList.add('text-gray-400');
+            });
+            e.target.classList.remove('text-gray-400');
+            e.target.classList.add('text-white');
+          }
+        });
+      });
+
+      document.getElementById('btn-reset-params').addEventListener('click', () => {
+        const p = presets.standard;
+        params.a = p.a; params.b = p.b; params.c = p.c;
+        sliderA.value = p.a; sliderB.value = p.b; sliderC.value = p.c;
+        document.getElementById('val-a').innerText = p.a.toFixed(2);
+        document.getElementById('val-b').innerText = p.b.toFixed(2);
+        document.getElementById('val-c').innerText = p.c.toFixed(2);
+      });
+
+      document.getElementById('btn-reset-cam').addEventListener('click', () => {
+        camera.position.set(20, 25, 45);
+        controls.target.set(0, 0, 10);
+        controls.update();
+      });
+
+      const autoRotateBtn = document.getElementById('btn-auto-rotate');
+      const rotateIcon = document.getElementById('icon-rotate');
+      autoRotateBtn.addEventListener('click', () => {
+        params.autoRotate = !params.autoRotate;
+        if (params.autoRotate) {
+          rotateIcon.classList.add('animate-spin-slow');
+          rotateIcon.classList.remove('opacity-40');
+        } else {
+          rotateIcon.classList.remove('animate-spin-slow');
+          rotateIcon.classList.add('opacity-40');
+        }
+      });
+
+      const toggleUiBtn = document.getElementById('btn-toggle-ui');
+      const panel = document.getElementById('control-panel');
+      toggleUiBtn.addEventListener('click', () => {
+        if (panel.classList.contains('ui-visible')) {
+          panel.classList.remove('ui-visible');
+          panel.classList.add('ui-hidden');
+        } else {
+          panel.classList.remove('ui-hidden');
+          panel.classList.add('ui-visible');
+        }
+      });
+    }
+
+    // --- Performance FPS Counter ---
+    let frameCount = 0;
+    let lastTime = performance.now();
+    const fpsElem = document.getElementById('fps-counter');
+
+    function updateFPS() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastTime >= 1000) {
+        fpsElem.innerText = frameCount;
+        frameCount = 0;
+        lastTime = now;
+      }
+    }
+
+    // --- Main Animation Loop ---
+    function animate() {
+      requestAnimationFrame(animate);
+
+      updateParticles();
+
+      if (params.autoRotate) {
+        particleSystem.rotation.z += 0.002;
+        particleSystem.rotation.y += 0.001;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+      updateFPS();
+    }
+
+    // Window Resize Handler
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Initialize Everything on Load
+    window.onload = function() {
+      initParticles();
+      bindUI();
+      controls.target.set(0, 0, 10);
+      animate();
+    };
+  </script>
+</body>
+</html>
